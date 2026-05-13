@@ -7,6 +7,7 @@ gh-streak torvalds
 gh-streak nameet-p --insights
 gh-streak nameet-p --compare torvalds
 gh-streak nameet-p --watch 21:00
+gh-streak nameet-p --export my-streak.png
 ```
 
 ---
