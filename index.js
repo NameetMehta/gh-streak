@@ -108,49 +108,51 @@ function calculateStreaks(weeks) {
 }
 
 function getHeatColor(count) {
-  if (count === 0) return chalk.gray("·");
-  if (count <= 2) return chalk.hex("#9be9a8")("▪");
-  if (count <= 5) return chalk.hex("#40c463")("▪");
-  if (count <= 9) return chalk.hex("#30a14e")("▪");
-  return chalk.hex("#216e39")("▪");
+  if (count === 0) return chalk.hex("#2d333b")("░");
+  if (count <= 2) return chalk.hex("#0e4429")("█");
+  if (count <= 5) return chalk.hex("#006d32")("█");
+  if (count <= 9) return chalk.hex("#26a641")("█");
+  return chalk.hex("#39d353")("█");
 }
 
 function renderHeatmap(weeks) {
   const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
   const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  const termWidth = process.stdout.columns || 80;
-  const PREFIX = 3; // "S  " prefix before cells
-  const weeksPerChunk = Math.max(4, termWidth - PREFIX - 1);
+  const termWidth = process.stdout.columns || 120;
+  const PREFIX = 3; // "S  "
+  // Each week = 2 chars (cell + space), so max weeks = floor((termWidth - PREFIX) / 2)
+  const weeksPerChunk = Math.max(4, Math.floor((termWidth - PREFIX) / 2));
 
   for (let start = 0; start < weeks.length; start += weeksPerChunk) {
     const chunk = weeks.slice(start, start + weeksPerChunk);
+    const totalChars = chunk.length * 2;
 
-    // Build month label row aligned to week positions in this chunk
-    const monthChars = Array(chunk.length).fill(" ");
+    // Month label row: label starts at exact char position wi*2
+    const monthChars = Array(totalChars).fill(" ");
     let lastMonth = -1;
     chunk.forEach((week, wi) => {
       const month = new Date(week.contributionDays[0]?.date).getMonth();
       if (month !== lastMonth) {
         const label = MONTH_NAMES[month];
-        for (let i = 0; i < label.length && wi + i < monthChars.length; i++)
-          monthChars[wi + i] = label[i];
+        const pos = wi * 2;
+        for (let i = 0; i < label.length && pos + i < totalChars; i++)
+          monthChars[pos + i] = label[i];
         lastMonth = month;
       }
     });
     console.log(chalk.dim("   " + monthChars.join("")));
 
-    // Build and print day rows for this chunk
+    // Day rows: cell + space between each week
     const rows = Array.from({ length: 7 }, () => []);
     for (const week of chunk)
       for (const day of week.contributionDays)
         rows[day.weekday].push(day.contributionCount);
 
     for (let d = 0; d < 7; d++)
-      console.log(chalk.dim(DAYS[d] + " ") + rows[d].map(getHeatColor).join(""));
+      console.log(chalk.dim(DAYS[d] + " ") + rows[d].map(getHeatColor).join(" "));
 
-    if (start + weeksPerChunk < weeks.length)
-      console.log(); // blank line between chunks
+    if (start + weeksPerChunk < weeks.length) console.log();
   }
 }
 
@@ -555,7 +557,7 @@ async function runWatch(username, token, timeStr) {
 program
   .name("gh-streak")
   .description("📊 Visualize GitHub contribution streaks in your terminal")
-  .version("1.2.3")
+  .version("1.2.4")
   .argument("<username>", "GitHub username")
   .option("-t, --token <token>", "GitHub personal access token (or set GH_TOKEN env var)")
   .option("-c, --compare <username>", "Compare with another GitHub user")
