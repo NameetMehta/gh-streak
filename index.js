@@ -658,7 +658,7 @@ async function runWatch(username, token, timeStr) {
 program
   .name("gh-streak")
   .description("📊 Visualize GitHub contribution streaks in your terminal")
-  .version("1.2.5")
+  .version("1.2.6")
   .argument("<username>", "GitHub username")
   .option("-t, --token <token>", "GitHub personal access token (or set GH_TOKEN env var)")
   .option("-c, --compare <username>", "Compare with another GitHub user")

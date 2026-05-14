@@ -1,6 +1,6 @@
 {
   "name": "gh-streak-cli",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "📊 Visualize GitHub contribution streaks & heatmaps in your terminal",
   "main": "index.js",
   "type": "module",
