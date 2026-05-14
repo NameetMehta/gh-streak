@@ -200,50 +200,130 @@ function getMonoFont() {
 }
 
 function exportToPng(users, outputPath) {
-  const CELL = 11, GAP = 2, LEFT_PAD = 30, TOP_PAD = 65;
-  const COLS = 53;
-  const SECTION_HEIGHT = TOP_PAD + 7 * (CELL + GAP) + 55;
-  const PANEL_WIDTH = LEFT_PAD + COLS * (CELL + GAP) + 20;
-  const canvasHeight = SECTION_HEIGHT * users.length + 20;
-
-  const canvas = createCanvas(PANEL_WIDTH, canvasHeight);
-  const ctx = canvas.getContext("2d");
-
-  // Use platform-appropriate monospace font to avoid garbled text on Windows
+  const isDuel = users.length === 2;
   const monoFont = getMonoFont();
 
+  // Layout constants
+  const CELL = 10, GAP = 4;
+  const COLS = 53;
+  const GRID_W = COLS * (CELL + GAP) - GAP;
+  const PADDING = 28;
+  const CANVAS_W = GRID_W + PADDING * 2;
+
+  // Heights per section
+  const HEADER_H    = isDuel ? 56  : 48;  // username + stats line
+  const MONTH_H     = 18;
+  const GRID_H      = 7 * (CELL + GAP) - GAP;
+  const FOOTER_H    = isDuel ? 52  : 20;  // wins line or just breathing room
+  const SECTION_H   = HEADER_H + MONTH_H + GRID_H + FOOTER_H;
+  const VS_BANNER_H = isDuel ? 32 : 0;
+  const BRANDING_H  = 24;
+  const CANVAS_H    = PADDING + VS_BANNER_H + SECTION_H * users.length + BRANDING_H + PADDING;
+
+  const canvas = createCanvas(CANVAS_W, CANVAS_H);
+  const ctx    = canvas.getContext("2d");
+
+  // ── Background ──────────────────────────────────────────────────────────────
   ctx.fillStyle = "#0d1117";
-  ctx.fillRect(0, 0, PANEL_WIDTH, canvasHeight);
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  users.forEach((user, ui) => {
-    const offsetY = ui * SECTION_HEIGHT;
-    const cal = user.contributionsCollection.contributionCalendar;
-    const { currentStreak, longestStreak } = calculateStreaks(cal.weeks);
+  // Subtle border
+  ctx.strokeStyle = "#21262d";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(1, 1, CANVAS_W - 2, CANVAS_H - 2, 10);
+  ctx.stroke();
 
+  // ── VS banner (duel only) ────────────────────────────────────────────────────
+  let cursor = PADDING;
+  if (isDuel) {
     ctx.fillStyle = "#58a6ff";
-    ctx.font = `bold 14px ${monoFont}`;
-    ctx.fillText(`@${user.login}`, LEFT_PAD, offsetY + 22);
+    ctx.font = `bold 13px ${monoFont}`;
+    const aLabel = `@${users[0].login}`;
+    const bLabel = `@${users[1].login}`;
+    const vsLabel = "  ⚔  vs  ";
+    ctx.fillText(aLabel, PADDING, cursor + 18);
 
     ctx.fillStyle = "#8b949e";
-    ctx.font = `11px ${monoFont}`;
+    ctx.fillText(vsLabel, PADDING + ctx.measureText(aLabel).width, cursor + 18);
+
+    ctx.fillStyle = "#f78166";
+    ctx.fillText(bLabel, PADDING + ctx.measureText(aLabel + vsLabel).width, cursor + 18);
+
+    // Thin divider
+    ctx.strokeStyle = "#21262d";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PADDING, cursor + VS_BANNER_H - 4);
+    ctx.lineTo(CANVAS_W - PADDING, cursor + VS_BANNER_H - 4);
+    ctx.stroke();
+
+    cursor += VS_BANNER_H;
+  }
+
+  // ── Per-user sections ────────────────────────────────────────────────────────
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  // Pre-compute stats for win calculation
+  const allStats = users.map(user => {
+    const cal    = user.contributionsCollection.contributionCalendar;
+    const c      = user.contributionsCollection;
+    const streak = calculateStreaks(cal.weeks);
+    return { total: cal.totalContributions, ...streak, commits: c.totalCommitContributions, prs: c.totalPullRequestContributions };
+  });
+
+  let aWins = 0, bWins = 0;
+  if (isDuel) {
+    const metrics = ["total","currentStreak","longestStreak","commits","prs"];
+    for (const m of metrics) {
+      if (allStats[0][m] > allStats[1][m]) aWins++;
+      else if (allStats[1][m] > allStats[0][m]) bWins++;
+    }
+  }
+
+  users.forEach((user, ui) => {
+    const cal   = user.contributionsCollection.contributionCalendar;
+    const stats = allStats[ui];
+    const sectionTop = cursor + ui * SECTION_H;
+
+    // ── Username ──
+    const nameColor = isDuel ? (ui === 0 ? "#58a6ff" : "#f78166") : "#58a6ff";
+    ctx.fillStyle = nameColor;
+    ctx.font = `bold 14px ${monoFont}`;
+    ctx.fillText(`@${user.login}`, PADDING, sectionTop + 18);
+
+    if (user.name) {
+      ctx.fillStyle = "#8b949e";
+      ctx.font = `11px ${monoFont}`;
+      ctx.fillText(user.name, PADDING + ctx.measureText(`@${user.login}`).width + 10, sectionTop + 18);
+    }
+
+    // ── Stats line ──
+    ctx.fillStyle = "#8b949e";
+    ctx.font = `10px ${monoFont}`;
     ctx.fillText(
-      `${cal.totalContributions} contributions  |  current streak: ${currentStreak}d  |  longest: ${longestStreak}d`,
-      LEFT_PAD, offsetY + 40
+      `${stats.total} contributions  ·  current streak ${stats.currentStreak}d  ·  longest ${stats.longestStreak}d`,
+      PADDING, sectionTop + HEADER_H - 10
     );
 
-    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    // ── Month labels ──
     let lastMonth = -1;
     cal.weeks.forEach((week, wi) => {
       const month = new Date(week.contributionDays[0]?.date).getMonth();
       if (month !== lastMonth) {
-        ctx.fillStyle = "#8b949e";
+        ctx.fillStyle = "#484f58";
         ctx.font = `9px ${monoFont}`;
-        ctx.fillText(monthNames[month], LEFT_PAD + wi * (CELL + GAP), offsetY + TOP_PAD - 5);
+        ctx.fillText(MONTH_NAMES[month], PADDING + wi * (CELL + GAP), sectionTop + HEADER_H + MONTH_H - 4);
         lastMonth = month;
       }
-      week.contributionDays.forEach((day) => {
-        const x = LEFT_PAD + wi * (CELL + GAP);
-        const y = offsetY + TOP_PAD + day.weekday * (CELL + GAP);
+    });
+
+    // ── Heatmap grid ──
+    const gridTop = sectionTop + HEADER_H + MONTH_H;
+    cal.weeks.forEach((week, wi) => {
+      week.contributionDays.forEach(day => {
+        const x = PADDING + wi * (CELL + GAP);
+        const y = gridTop + day.weekday * (CELL + GAP);
         ctx.fillStyle = getHeatFill(day.contributionCount);
         ctx.beginPath();
         ctx.roundRect(x, y, CELL, CELL, 2);
@@ -251,19 +331,38 @@ function exportToPng(users, outputPath) {
       });
     });
 
+    // ── Section divider (between users) ──
     if (ui < users.length - 1) {
+      const divY = sectionTop + SECTION_H - FOOTER_H / 2;
       ctx.strokeStyle = "#21262d";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(10, offsetY + SECTION_HEIGHT - 10);
-      ctx.lineTo(PANEL_WIDTH - 10, offsetY + SECTION_HEIGHT - 10);
+      ctx.moveTo(PADDING, divY);
+      ctx.lineTo(CANVAS_W - PADDING, divY);
       ctx.stroke();
     }
   });
 
+  // ── Winner line (duel only) ──────────────────────────────────────────────────
+  if (isDuel) {
+    const winY = cursor + SECTION_H * 2 - FOOTER_H / 2 + 10;
+    ctx.font = `bold 11px ${monoFont}`;
+    if (aWins > bWins) {
+      ctx.fillStyle = "#3fb950";
+      ctx.fillText(`🏆  @${users[0].login} wins  (${aWins}-${bWins})`, PADDING, winY);
+    } else if (bWins > aWins) {
+      ctx.fillStyle = "#3fb950";
+      ctx.fillText(`🏆  @${users[1].login} wins  (${bWins}-${aWins})`, PADDING, winY);
+    } else {
+      ctx.fillStyle = "#f0c428";
+      ctx.fillText(`🤝  It's a tie!`, PADDING, winY);
+    }
+  }
+
+  // ── Branding ─────────────────────────────────────────────────────────────────
   ctx.fillStyle = "#30363d";
   ctx.font = `9px ${monoFont}`;
-  ctx.fillText("generated by gh-streak", LEFT_PAD, canvasHeight - 6);
+  ctx.fillText("generated by gh-streak-cli", PADDING, CANVAS_H - PADDING / 2);
 
   fs.writeFileSync(outputPath, canvas.toBuffer("image/png"));
   console.log(chalk.green(`\n  ✔ PNG exported → ${outputPath}\n`));
@@ -557,7 +656,7 @@ async function runWatch(username, token, timeStr) {
 program
   .name("gh-streak")
   .description("📊 Visualize GitHub contribution streaks in your terminal")
-  .version("1.2.4")
+  .version("1.2.5")
   .argument("<username>", "GitHub username")
   .option("-t, --token <token>", "GitHub personal access token (or set GH_TOKEN env var)")
   .option("-c, --compare <username>", "Compare with another GitHub user")
