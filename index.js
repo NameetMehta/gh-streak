@@ -6,7 +6,7 @@ import fetch from "node-fetch";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import notifier from "node-notifier";
 
 const GITHUB_GRAPHQL = "https://api.github.com/graphql";
@@ -117,31 +117,41 @@ function getHeatColor(count) {
 
 function renderHeatmap(weeks) {
   const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
-  const rows = Array.from({ length: 7 }, () => []);
-  for (const week of weeks)
-    for (const day of week.contributionDays)
-      rows[day.weekday].push(day.contributionCount);
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const termWidth = process.stdout.columns || 80;
+  const PREFIX = 3; // "S  " prefix before cells
+  const weeksPerChunk = Math.max(4, termWidth - PREFIX - 1);
 
-  // Each week = 2 display chars (cell + space). Build month row as a char array
-  // so labels land at exact positions and never overlap.
-  const monthChars = Array(weeks.length * 2).fill(" ");
-  let lastMonth = -1;
-  weeks.forEach((week, wi) => {
-    const month = new Date(week.contributionDays[0]?.date).getMonth();
-    if (month !== lastMonth) {
-      const label = monthNames[month];
-      const pos = wi * 2;
-      for (let i = 0; i < label.length && pos + i < monthChars.length; i++)
-        monthChars[pos + i] = label[i];
-      lastMonth = month;
-    }
-  });
+  for (let start = 0; start < weeks.length; start += weeksPerChunk) {
+    const chunk = weeks.slice(start, start + weeksPerChunk);
 
-  console.log(chalk.dim("     " + monthChars.join("")));
-  for (let d = 0; d < 7; d++)
-    console.log(chalk.dim(DAYS[d] + "  ") + rows[d].map(getHeatColor).join(" "));
+    // Build month label row aligned to week positions in this chunk
+    const monthChars = Array(chunk.length).fill(" ");
+    let lastMonth = -1;
+    chunk.forEach((week, wi) => {
+      const month = new Date(week.contributionDays[0]?.date).getMonth();
+      if (month !== lastMonth) {
+        const label = MONTH_NAMES[month];
+        for (let i = 0; i < label.length && wi + i < monthChars.length; i++)
+          monthChars[wi + i] = label[i];
+        lastMonth = month;
+      }
+    });
+    console.log(chalk.dim("   " + monthChars.join("")));
+
+    // Build and print day rows for this chunk
+    const rows = Array.from({ length: 7 }, () => []);
+    for (const week of chunk)
+      for (const day of week.contributionDays)
+        rows[day.weekday].push(day.contributionCount);
+
+    for (let d = 0; d < 7; d++)
+      console.log(chalk.dim(DAYS[d] + " ") + rows[d].map(getHeatColor).join(""));
+
+    if (start + weeksPerChunk < weeks.length)
+      console.log(); // blank line between chunks
+  }
 }
 
 function renderBar(label, value, max, color) {
@@ -159,6 +169,34 @@ function getHeatFill(count) {
   return "#39d353";
 }
 
+function getMonoFont() {
+  if (process.platform === "win32") {
+    const candidates = [
+      "C:\\Windows\\Fonts\\consola.ttf",
+      "C:\\Windows\\Fonts\\cour.ttf",  // Courier New fallback
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        try { GlobalFonts.registerFromPath(p, "MonoCustom"); return "MonoCustom"; } catch {}
+      }
+    }
+    return "Arial"; // last resort — always available on Windows
+  }
+  if (process.platform === "darwin") {
+    const candidates = [
+      "/System/Library/Fonts/Menlo.ttc",
+      "/Library/Fonts/Courier New.ttf",
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        try { GlobalFonts.registerFromPath(p, "MonoCustom"); return "MonoCustom"; } catch {}
+      }
+    }
+    return "monospace";
+  }
+  return "monospace";
+}
+
 function exportToPng(users, outputPath) {
   const CELL = 11, GAP = 2, LEFT_PAD = 30, TOP_PAD = 65;
   const COLS = 53;
@@ -170,8 +208,7 @@ function exportToPng(users, outputPath) {
   const ctx = canvas.getContext("2d");
 
   // Use platform-appropriate monospace font to avoid garbled text on Windows
-  const monoFont = process.platform === "win32" ? "Consolas" :
-                   process.platform === "darwin" ? "Menlo" : "monospace";
+  const monoFont = getMonoFont();
 
   ctx.fillStyle = "#0d1117";
   ctx.fillRect(0, 0, PANEL_WIDTH, canvasHeight);
@@ -518,7 +555,7 @@ async function runWatch(username, token, timeStr) {
 program
   .name("gh-streak")
   .description("📊 Visualize GitHub contribution streaks in your terminal")
-  .version("1.2.0")
+  .version("1.2.3")
   .argument("<username>", "GitHub username")
   .option("-t, --token <token>", "GitHub personal access token (or set GH_TOKEN env var)")
   .option("-c, --compare <username>", "Compare with another GitHub user")
