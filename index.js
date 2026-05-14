@@ -149,8 +149,10 @@ function renderHeatmap(weeks) {
       for (const day of week.contributionDays)
         rows[day.weekday].push(day.contributionCount);
 
-    for (let d = 0; d < 7; d++)
+    for (let d = 0; d < 7; d++) {
       console.log(chalk.dim(DAYS[d] + " ") + rows[d].map(getHeatColor).join(" "));
+      if (d < 6) console.log();
+    }
 
     if (start + weeksPerChunk < weeks.length) console.log();
   }
